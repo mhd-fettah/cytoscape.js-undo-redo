@@ -230,44 +230,28 @@
         function defaultActions(cy) {
 
             function getTopMostNodes(nodes) {
-                var nodesMap = {};
-                for (var i = 0; i < nodes.length; i++) {
-                    nodesMap[nodes[i].id()] = true;
-                }
-                var roots = nodes.filter(function (ele, i) {
-                    if(typeof ele === "number") {
-                      ele = i;
-                    }
-                    var parent = ele.parent()[0];
-                    while(parent != null){
-                        if(nodesMap[parent.id()]){
-                            return false;
-                        }
+                const nodesMap = new Set(nodes.map(node => node.id()));
+                return nodes.filter(ele => {
+                    let parent = ele.parent()[0];
+                    while (parent) {
+                        if (nodesMap.has(parent.id())) return false;
                         parent = parent.parent()[0];
                     }
                     return true;
                 });
-
-                return roots;
             }
 
-            function moveNodes(positionDiff, nodes, notCalcTopMostNodes) {
-                var topMostNodes = notCalcTopMostNodes?nodes:getTopMostNodes(nodes);
-                for (var i = 0; i < topMostNodes.length; i++) {
-                    var node = topMostNodes[i];
-                    var oldX = node.position("x");
-                    var oldY = node.position("y");
-                    //Only simple nodes are moved since the movement of compounds caused the position to be moved twice
-                    if (!node.isParent())
-                    {
+            function moveNodes(positionDiff, nodes, notCalcTopMostNodes = false) {
+                const topMostNodes = notCalcTopMostNodes ? nodes : getTopMostNodes(nodes);
+                topMostNodes.forEach(node => {
+                    if (!node.isParent()) {
                         node.position({
-                            x: oldX + positionDiff.x,
-                            y: oldY + positionDiff.y
+                            x: node.position('x') + positionDiff.x,
+                            y: node.position('y') + positionDiff.y,
                         });
                     }
-                    var children = node.children();
-                    moveNodes(positionDiff, children, true);
-                }
+                    moveNodes(positionDiff, node.children(), true);
+                });
             }
 
             function getEles(_eles) {
