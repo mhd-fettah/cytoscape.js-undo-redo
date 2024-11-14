@@ -169,23 +169,12 @@
             setScratch(cy, 'instance', instance);
 
             if (options) {
-                for (var key in options)
-                    if (instance.options.hasOwnProperty(key))
-                        instance.options[key] = options[key];
-
-                if (options.actions)
-                    for (var key in options.actions)
-                        instance.actions[key] = options.actions[key];
-
+                Object.assign(instance.options, options);
+                Object.assign(instance.actions, options.actions);
             }
 
             if (!getScratch(cy, 'isInitialized') && !dontInit) {
-
-                var defActions = defaultActions(cy);
-                for (var key in defActions)
-                    instance.actions[key] = defActions[key];
-
-
+                Object.assign(instance.actions, defaultActions(cy));
                 setDragUndo(cy, instance.options.undoableDrag);
                 setScratch(cy, 'isInitialized', true);
             }
