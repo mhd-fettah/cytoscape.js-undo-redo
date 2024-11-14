@@ -4,9 +4,7 @@
 // registers the extension on a cytoscape lib ref
     var register = function (cytoscape) {
 
-        if (!cytoscape) {
-            return;
-        } // can't register if cytoscape unspecified
+        if (!cytoscape) return; // Exit if cytoscape is undefined
 
         // Get scratch pad reserved for this extension on the given element or the core if 'name' parameter is not set,
         // if the 'name' parameter is set then return the related property in the scratch instead of the whole scratchpad
@@ -32,162 +30,136 @@
 
         // Generate an instance of the extension for the given cy instance
         function generateInstance (cy) {
-          var instance = {};
+            return {
+                options: {
+                    isDebug: false, // Debug mode for console messages
+                    actions: {},// actions to be added
+                    undoableDrag: true, // Whether dragging nodes are undoable can be a function as well
+                    stackSizeLimit: undefined, // Size limit of undo stack, note that the size of redo stack cannot exceed size of undo stack
+                    beforeUndo: () => {}, // callback before undo is triggered.
+                    afterUndo: () => {}, // callback after undo is triggered.
+                    beforeRedo: () => {}, // callback before redo is triggered.
+                    afterRedo: () => {}, // callback after redo is triggered.
+                    ready: () => {},
+                },
+                actions: {},
+                undoStack: [],
+                redoStack: [],
 
-          instance.options = {
-              isDebug: false, // Debug mode for console messages
-              actions: {},// actions to be added
-              undoableDrag: true, // Whether dragging nodes are undoable can be a function as well
-              stackSizeLimit: undefined, // Size limit of undo stack, note that the size of redo stack cannot exceed size of undo stack
-              beforeUndo: function () { // callback before undo is triggered.
+                //resets undo and redo stacks
+                reset(undos = [], redos = []) {
+                    this.undoStack = undos;
+                    this.redoStack = redos;
+                },
 
-              },
-              afterUndo: function () { // callback after undo is triggered.
+                // Undo last action
+                undo() {
+                    if (this.isUndoStackEmpty()) {
+                        if (this.options.isDebug) console.log("Undoing cannot be done because undo stack is empty!");
+                        return;
+                    }
+                    var action = this.undoStack.pop();
+                    cy.trigger("beforeUndo", [action.name, action.args]);
 
-              },
-              beforeRedo: function () { // callback before redo is triggered.
+                    var res = this.actions[action.name]._undo(action.args);
 
-              },
-              afterRedo: function () { // callback after redo is triggered.
+                    this.redoStack.push({
+                        name: action.name,
+                        args: res
+                    });
 
-              },
-              ready: function () {
+                    cy.trigger("afterUndo", [action.name, action.args, res]);
+                    return res;
 
-              }
-          };
+                },
 
-          instance.actions = {};
+                // Redo last action
+                redo() {
+                    if (this.isRedoStackEmpty()) {
+                        if (this.options.isDebug) console.log("Redoing cannot be done because redo stack is empty!");
+                        return;
+                    }
+                    var action = this.redoStack.pop();
 
-          instance.undoStack = [];
+                    cy.trigger(action.firstTime ? "beforeDo" : "beforeRedo", [action.name, action.args]);
 
-          instance.redoStack = [];
+                    action.args.firstTime = !!action.firstTime;
 
-          //resets undo and redo stacks
-          instance.reset = function(undos, redos)
-          {
-              this.undoStack = undos || [];
-              this.redoStack = redos || [];
-          }
+                    var res = this.actions[action.name]._do(action.args);
 
-          // Undo last action
-          instance.undo = function () {
-              if (!this.isUndoStackEmpty()) {
+                    this.undoStack.push({
+                        name: action.name,
+                        args: res
+                    });
 
-                  var action = this.undoStack.pop();
-                  cy.trigger("beforeUndo", [action.name, action.args]);
+                    if (this.options.stackSizeLimit != undefined && this.undoStack.length > this.options.stackSizeLimit) {
+                        this.undoStack.shift();
+                    }
 
-                  var res = this.actions[action.name]._undo(action.args);
+                    cy.trigger(action.firstTime ? "afterDo" : "afterRedo", [action.name, action.args, res]);
+                    return res;
+                },
 
-                  this.redoStack.push({
-                      name: action.name,
-                      args: res
-                  });
+                // Calls registered function with action name actionName via actionFunction(args)
+                do(actionName, args) {
+                    this.redoStack.length = 0;
+                    this.redoStack.push({
+                        name: actionName,
+                        args: args,
+                        firstTime: true
+                    });
 
-                  cy.trigger("afterUndo", [action.name, action.args, res]);
-                  return res;
-              } else if (this.options.isDebug) {
-                  console.log("Undoing cannot be done because undo stack is empty!");
-              }
-          };
+                    return this.redo();
+                },
 
-          // Redo last action
-          instance.redo = function () {
+                // Undo all actions in undo stack
+                undoAll() {
+                    while (!this.isUndoStackEmpty()) {
+                        this.undo();
+                    }
+                },
 
-              if (!this.isRedoStackEmpty()) {
-                  var action = this.redoStack.pop();
+                // Redo all actions in redo stack
+                redoAll() {
+                    while (!this.isRedoStackEmpty()) {
+                        this.redo();
+                    }
+                },
 
-                  cy.trigger(action.firstTime ? "beforeDo" : "beforeRedo", [action.name, action.args]);
+                // Register action with its undo function & action name.
+                action(actionName, _do, _undo) {
+                    this.actions[actionName] = {
+                        _do: _do,
+                        _undo: _undo
+                    }
+                    return this;
+                },
 
-                  if (!action.args)
-                    action.args = {};
-                  action.args.firstTime = action.firstTime ? true : false;
+                // Removes action stated with actionName param
+                removeAction(actionName) {
+                    delete this.actions[actionName];
+                },
 
-                  var res = this.actions[action.name]._do(action.args);
+                // Gets whether undo stack is empty
+                isUndoStackEmpty() {
+                    return (this.undoStack.length === 0);
+                },
 
-                  this.undoStack.push({
-                      name: action.name,
-                      args: res
-                  });
+                // Gets whether redo stack is empty
+                isRedoStackEmpty() {
+                    return (this.redoStack.length === 0);
+                },
 
-                  if (this.options.stackSizeLimit != undefined && this.undoStack.length > this.options.stackSizeLimit ) {
-                    this.undoStack.shift();
-                  }
+                // Gets actions (with their args) in undo stack
+                getUndoStack() {
+                    return this.undoStack;
+                },
 
-                  cy.trigger(action.firstTime ? "afterDo" : "afterRedo", [action.name, action.args, res]);
-                  return res;
-              } else if (this.options.isDebug) {
-                  console.log("Redoing cannot be done because redo stack is empty!");
-              }
-
-          };
-
-          // Calls registered function with action name actionName via actionFunction(args)
-          instance.do = function (actionName, args) {
-
-              this.redoStack.length = 0;
-              this.redoStack.push({
-                  name: actionName,
-                  args: args,
-                  firstTime: true
-              });
-
-              return this.redo();
-          };
-
-          // Undo all actions in undo stack
-          instance.undoAll = function() {
-
-              while( !this.isUndoStackEmpty() ) {
-                  this.undo();
-              }
-          };
-
-          // Redo all actions in redo stack
-          instance.redoAll = function() {
-
-              while( !this.isRedoStackEmpty() ) {
-                  this.redo();
-              }
-          };
-
-          // Register action with its undo function & action name.
-          instance.action = function (actionName, _do, _undo) {
-
-              this.actions[actionName] = {
-                  _do: _do,
-                  _undo: _undo
-              };
-
-
-              return this;
-          };
-
-          // Removes action stated with actionName param
-          instance.removeAction = function (actionName) {
-              delete this.actions[actionName];
-          };
-
-          // Gets whether undo stack is empty
-          instance.isUndoStackEmpty = function () {
-              return (this.undoStack.length === 0);
-          };
-
-          // Gets whether redo stack is empty
-          instance.isRedoStackEmpty = function () {
-              return (this.redoStack.length === 0);
-          };
-
-          // Gets actions (with their args) in undo stack
-          instance.getUndoStack = function () {
-              return this.undoStack;
-          };
-
-          // Gets actions (with their args) in redo stack
-          instance.getRedoStack = function () {
-              return this.redoStack;
-          };
-
-          return instance;
+                // Gets actions (with their args) in redo stack
+                getRedoStack() {
+                    return this.redoStack;
+                },
+            }
         }
 
         // design implementation
