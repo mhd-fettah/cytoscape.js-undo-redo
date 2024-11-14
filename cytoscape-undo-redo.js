@@ -188,26 +188,26 @@
         function setDragUndo(cy, undoable) {
             var lastMouseDownNodeInfo = null;
 
-            cy.on("grab", "node", function () {
+            cy.on('grab', 'node', function () {
                 if (typeof undoable === 'function' ? undoable.call(this) : undoable) {
-                    lastMouseDownNodeInfo = {};
-                    lastMouseDownNodeInfo.lastMouseDownPosition = {
-                        x: this.position("x"),
-                        y: this.position("y")
+                    lastMouseDownNodeInfo = {
+                        lastMouseDownPosition: {
+                            x: this.position('x'),
+                            y: this.position('y')
+                        },
+                        node: this,
                     };
-                    lastMouseDownNodeInfo.node = this;
                 }
             });
+
             cy.on("free", "node", function () {
 
                 var instance = getScratch(cy, 'instance');
 
                 if (typeof undoable === 'function' ? undoable.call(this) : undoable) {
-                    if (lastMouseDownNodeInfo == null) {
-                        return;
-                    }
-                    var node = lastMouseDownNodeInfo.node;
-                    var lastMouseDownPosition = lastMouseDownNodeInfo.lastMouseDownPosition;
+                    if (!lastMouseDownNodeInfo) return;
+
+                    const { node, lastMouseDownPosition } = lastMouseDownNodeInfo;
                     var mouseUpPosition = {
                         x: node.position("x"),
                         y: node.position("y")
@@ -218,22 +218,8 @@
                             x: mouseUpPosition.x - lastMouseDownPosition.x,
                             y: mouseUpPosition.y - lastMouseDownPosition.y
                         };
-
-                        var nodes;
-                        if (node.selected()) {
-                            nodes = cy.nodes(":visible").filter(":selected");
-                        }
-                        else {
-                            nodes = cy.collection([node]);
-                        }
-
-                        var param = {
-                            positionDiff: positionDiff,
-                            nodes: nodes, move: false
-                        };
-
-                        instance.do("drag", param);
-
+                        const nodes = node.selected() ? cy.nodes(':visible').filter(':selected') : cy.collection([node]);
+                        instance.do('drag', { positionDiff, nodes, move: false });
                         lastMouseDownNodeInfo = null;
                     }
                 }
